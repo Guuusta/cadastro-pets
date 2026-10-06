@@ -1,0 +1,18 @@
+# Arquivos que o Git deve IGNORAR (nunca vão para o GitHub)
+
+# Segredos: senhas, chaves, certificados privados
+.env
+secrets/
+*.key
+*.pem
+
+# Lixo do Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Lixo de editor / sistema
+.vscode/
+.idea/
+.DS_Store
