@@ -1,0 +1,54 @@
+# ============================================================
+# Cadastro de Pets: tudo que roda junto, num arquivo só.
+# Subir:   docker compose up -d --build
+# Parar:   docker compose down        (os dados ficam no volume)
+# Os valores ${...} vêm do arquivo .env
+# ============================================================
+name: cadastro-pets
+
+services:
+
+  # ---------- Banco de dados ----------
+  db:
+    image: postgres:18.6-alpine              # versão exata (não "latest")
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}            # cria o banco na 1ª vez
+      POSTGRES_USER: ${POSTGRES_USER}        # cria o usuário na 1ª vez
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # VOLUME: os dados do banco moram aqui, FORA do container.
+      # (no Postgres 18, a pasta de dados fica dentro de /var/lib/postgresql)
+      - db-dados:/var/lib/postgresql
+    restart: unless-stopped
+    # sem "ports": só a API (dentro da rede) fala com o banco
+
+  # ---------- API ----------
+  api:
+    build: ./api                                     # constrói a partir do api/Dockerfile...
+    image: cadastro-pets-api:${API_VERSION}          # ...e dá esta tag à imagem
+    environment:
+      # A MESMA API de antes, agora apontando para o Postgres em vez do SQLite.
+      # Cada dado numa variável separada: a API monta o endereço e trata
+      # caracteres especiais da senha (como @), que quebravam a versão 0.1.0
+      DB_HOST: db                            # "db" = nome do serviço acima (a rede do Compose resolve)
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - db
+    restart: unless-stopped
+    ports:
+      - "8000:8000"      # TEMPORÁRIO: para testar agora. Sai na fase 4 (o proxy assume)
+
+  # ---------- Web ----------
+  web:
+    build: ./web
+    image: cadastro-pets-web:${WEB_VERSION}
+    restart: unless-stopped
+    ports:
+      - "8081:8080"      # TEMPORÁRIO: sai na fase 4
+
+# ---------- Volumes ----------
+volumes:
+  db-dados:              # volume nomeado, gerenciado pelo Docker
