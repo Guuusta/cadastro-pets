@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from .database import Base, engine, get_db
 
-VERSAO = "0.1.0"
+VERSAO = "0.1.1"
 
 # Cria a tabela "pets" se ela ainda não existir
 Base.metadata.create_all(bind=engine)

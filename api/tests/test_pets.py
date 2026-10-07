@@ -49,3 +49,16 @@ def test_validacao_idade_negativa():
 
 def test_pet_inexistente():
     assert cliente.get("/pets/99999").status_code == 404
+
+
+def test_senha_com_caracteres_especiais(monkeypatch):
+    """Senha com @ : / # não pode quebrar o endereço do banco (bug encontrado na fase 3)."""
+    from app.database import montar_url_do_banco
+
+    monkeypatch.setenv("DB_HOST", "db")
+    monkeypatch.setenv("DB_USER", "pets")
+    monkeypatch.setenv("DB_PASSWORD", "a@b:c/d#e")
+    monkeypatch.setenv("DB_NAME", "pets")
+    url = montar_url_do_banco()
+    assert url.host == "db"               # o host continua sendo só "db"
+    assert url.password == "a@b:c/d#e"    # e a senha chega inteira
