@@ -20,6 +20,8 @@ services:
       # (no Postgres 18, a pasta de dados fica dentro de /var/lib/postgresql)
       - db-dados:/var/lib/postgresql
     restart: unless-stopped
+    networks:
+      - backend          # SÓ na rede interna: proxy e web nem enxergam o banco
     # sem "ports": só a API (dentro da rede) fala com o banco
 
   # ---------- API ----------
@@ -35,20 +37,44 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      ROOT_PATH: /api                        # atrás do proxy, a API mora em /api (para o /docs funcionar)
     depends_on:
       - db
     restart: unless-stopped
-    ports:
-      - "8000:8000"      # TEMPORÁRIO: para testar agora. Sai na fase 4 (o proxy assume)
+    networks:
+      - frontend         # recebe pedidos do proxy
+      - backend          # e é a ÚNICA que fala com o banco
+    # sem "ports": só o proxy fala com a API
 
   # ---------- Web ----------
   web:
     build: ./web
     image: cadastro-pets-web:${WEB_VERSION}
     restart: unless-stopped
+    networks:
+      - frontend
+    # sem "ports": só o proxy fala com a Web
+
+  # ---------- Proxy reverso (a "portaria") ----------
+  proxy:
+    image: nginx:1.30.5-alpine               # versão estável, fixa
     ports:
-      - "8081:8080"      # TEMPORÁRIO: sai na fase 4
+      - "80:80"                              # a ÚNICA porta aberta para fora
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro   # nossa config, só leitura
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+    networks:
+      - frontend         # só a "recepção": não tem acesso ao banco
 
 # ---------- Volumes ----------
 volumes:
   db-dados:              # volume nomeado, gerenciado pelo Docker
+
+# ---------- Redes (segmentação: cada um só enxerga o que precisa) ----------
+networks:
+  frontend:              # "recepção": proxy, web e api
+  backend:               # "cofre": só api e banco
+    internal: true       # sem saída para a internet
