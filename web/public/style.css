@@ -9,7 +9,8 @@ main { max-width: 960px; margin: 24px auto; padding: 0 16px; display: grid; gap:
 h2 { margin-top: 0; font-size: 1.1rem; }
 form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 label { display: grid; gap: 4px; font-size: .85rem; font-weight: 600; }
-input { padding: 8px; border: 1px solid var(--borda); border-radius: 6px; font: inherit; }
+input { padding: 8px; border: 1px solid var(--borda); border-radius: 6px; font: inherit;
+        width: 100%; min-width: 0; }  /* ocupa só a largura da coluna, sem "vazar" */
 .botoes { display: flex; gap: 8px; align-items: end; }
 button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--cor); color: #fff; cursor: pointer; font: inherit; }
 button.secundario { background: #e6ece9; color: #1c1c1c; }
