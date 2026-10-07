@@ -2,7 +2,7 @@
 # Cadastro de Pets: tudo que roda junto, num arquivo só.
 # Subir:   docker compose up -d --build
 # Parar:   docker compose down        (os dados ficam no volume)
-# Os valores ${...} vêm do arquivo .env
+# Os valores ${...} vêm do arquivo .env. A senha do banco vem de secrets/db_password.txt
 # ============================================================
 name: cadastro-pets
 
@@ -14,60 +14,94 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB}            # cria o banco na 1ª vez
       POSTGRES_USER: ${POSTGRES_USER}        # cria o usuário na 1ª vez
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # A senha NÃO fica aqui: o Postgres lê do arquivo do secret
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password                          # monta o secret em /run/secrets/db_password
     volumes:
       # VOLUME: os dados do banco moram aqui, FORA do container.
       # (no Postgres 18, a pasta de dados fica dentro de /var/lib/postgresql)
       - db-dados:/var/lib/postgresql
+    healthcheck:
+      # "pg_isready" = ferramenta do próprio Postgres: "você já aceita conexões?"
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s           # pergunta a cada 5s
+      timeout: 3s            # se não responder em 3s, conta como falha
+      retries: 10            # 10 falhas seguidas = unhealthy
+      start_period: 10s      # tempo de "aquecimento": falhas aqui não contam
     restart: unless-stopped
     networks:
-      - backend          # SÓ na rede interna: proxy e web nem enxergam o banco
-    # sem "ports": só a API (dentro da rede) fala com o banco
+      - backend              # SÓ na rede interna: proxy e web nem enxergam o banco
 
   # ---------- API ----------
   api:
     build: ./api                                     # constrói a partir do api/Dockerfile...
     image: cadastro-pets-api:${API_VERSION}          # ...e dá esta tag à imagem
     environment:
-      # A MESMA API de antes, agora apontando para o Postgres em vez do SQLite.
-      # Cada dado numa variável separada: a API monta o endereço e trata
-      # caracteres especiais da senha (como @), que quebravam a versão 0.1.0
-      DB_HOST: db                            # "db" = nome do serviço acima (a rede do Compose resolve)
+      # Cada dado numa variável separada: a API monta o endereço do banco
+      # e trata caracteres especiais da senha (como @)
+      DB_HOST: db                            # "db" = nome do serviço acima
       DB_PORT: "5432"
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      ROOT_PATH: /api                        # atrás do proxy, a API mora em /api (para o /docs funcionar)
+      DB_PASSWORD_FILE: /run/secrets/db_password   # a senha vem do secret, não de variável
+      ROOT_PATH: /api                        # atrás do proxy, a API mora em /api
+    secrets:
+      - db_password
     depends_on:
-      - db
+      db:
+        condition: service_healthy           # só liga DEPOIS que o banco estiver pronto de verdade
+    healthcheck:
+      # Chama o /health da própria API (que testa o banco). A imagem slim não tem curl,
+      # então usamos o próprio Python
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
     networks:
-      - frontend         # recebe pedidos do proxy
-      - backend          # e é a ÚNICA que fala com o banco
-    # sem "ports": só o proxy fala com a API
+      - frontend             # recebe pedidos do proxy
+      - backend              # e é a ÚNICA que fala com o banco
 
   # ---------- Web ----------
   web:
     build: ./web
     image: cadastro-pets-web:${WEB_VERSION}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
     networks:
       - frontend
-    # sem "ports": só o proxy fala com a Web
 
   # ---------- Proxy reverso (a "portaria") ----------
   proxy:
     image: nginx:1.30.5-alpine               # versão estável, fixa
     ports:
-      - "80:80"                              # a ÚNICA porta aberta para fora
+      - "${PROXY_PORT:-80}:80"               # a ÚNICA porta aberta para fora (padrão: 80)
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro   # nossa config, só leitura
     depends_on:
-      - api
-      - web
+      api:
+        condition: service_healthy           # só abre a portaria quando API...
+      web:
+        condition: service_healthy           # ...e Web estiverem saudáveis
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
     networks:
-      - frontend         # só a "recepção": não tem acesso ao banco
+      - frontend             # só a "recepção": não tem acesso ao banco
+
+# ---------- Secrets (senhas em arquivo, fora das variáveis de ambiente) ----------
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt          # este arquivo NÃO vai para o Git (.gitignore)
 
 # ---------- Volumes ----------
 volumes:
