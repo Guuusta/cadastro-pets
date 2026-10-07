@@ -1,0 +1,4 @@
+# Nada além do necessário entra na imagem
+*
+!public/
+!nginx.conf

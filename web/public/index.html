@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cadastro de Pets</title>
+  <!-- Caminhos RELATIVOS (sem "/" no começo): funcionam tanto em /  quanto em /web/ atrás do proxy -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🐾 Cadastro de Pets</h1>
+    <span id="status-api" class="status">verificando API...</span>
+  </header>
+
+  <main>
+    <!-- Formulário: serve para CADASTRAR e para EDITAR (quando tem id preenchido) -->
+    <section class="card">
+      <h2 id="titulo-form">Novo pet</h2>
+      <form id="form-pet">
+        <input type="hidden" id="pet-id">
+        <label>Nome <input id="nome" required maxlength="100"></label>
+        <label>Espécie <input id="especie" required maxlength="50" placeholder="Cachorro, Gato..."></label>
+        <label>Raça <input id="raca" required maxlength="100"></label>
+        <label>Idade (anos) <input id="idade" type="number" min="0" max="100" required></label>
+        <label>Tutor <input id="tutor" required maxlength="100"></label>
+        <div class="botoes">
+          <button type="submit" id="btn-salvar">Cadastrar</button>
+          <button type="button" id="btn-cancelar" class="secundario" hidden>Cancelar edição</button>
+        </div>
+      </form>
+      <p id="mensagem" class="mensagem" role="status"></p>
+    </section>
+
+    <!-- Lista de pets -->
+    <section class="card">
+      <h2>Pets cadastrados</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Nome</th><th>Espécie</th><th>Raça</th><th>Idade</th><th>Tutor</th><th></th></tr>
+        </thead>
+        <tbody id="lista-pets"></tbody>
+      </table>
+      <p id="vazio" class="vazio" hidden>Nenhum pet cadastrado ainda.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
