@@ -1,0 +1,112 @@
+# ============================================================
+# CI/CD do Cadastro de Pets (GitHub Actions)
+#   CI: a cada push ou pull request -> testa a API e valida o compose
+#   CD: a cada push na main (se o CI passou) -> constrói e PUBLICA as imagens
+#       no GitHub Container Registry (ghcr.io), com a tag da versão
+# ============================================================
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:            # permite rodar na mão pela aba Actions
+
+# Por padrão, o robô só pode LER o repositório
+permissions:
+  contents: read
+
+jobs:
+
+  # ---------- 1. Testes da API ----------
+  testes:
+    name: Testes da API
+    runs-on: ubuntu-latest        # computador emprestado pelo GitHub
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Instalar dependências
+        run: pip install -r requirements-dev.txt
+
+      - name: Rodar os testes
+        run: python -m pytest -v
+
+  # ---------- 2. Validação do compose ----------
+  compose:
+    name: Validar o compose.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar a sintaxe do compose
+        run: |
+          # O compose precisa do .env e do secret para validar: usamos os de exemplo
+          cp .env.example .env
+          mkdir -p secrets && echo "senha-de-teste" > secrets/db_password.txt
+          docker compose config --quiet && echo "compose.yaml válido"
+
+  # ---------- 3. Construir e publicar as imagens ----------
+  publicar:
+    name: Publicar imagem (${{ matrix.app }})
+    needs: [testes, compose]               # SÓ roda se os dois jobs acima passaram
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write                      # permissão para publicar no ghcr.io
+    strategy:
+      matrix:
+        app: [api, web]                    # roda este job 2x: uma para a API, outra para a Web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descobrir a versão da imagem
+        id: versao
+        run: |
+          # A versão oficial de cada app fica no .env.example (API_VERSION / WEB_VERSION)
+          VAR=$(echo "${{ matrix.app }}" | tr '[:lower:]' '[:upper:]')_VERSION
+          VERSAO=$(grep "^${VAR}=" .env.example | cut -d= -f2)
+          echo "versao=${VERSAO}" >> "$GITHUB_OUTPUT"
+          # O registry exige o nome do dono em minúsculas
+          echo "dono=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "Versão de ${{ matrix.app }}: ${VERSAO}"
+
+      - name: Preparar o Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no GitHub Container Registry
+        # Só publica em push na main (pull request só constrói, para testar)
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # token temporário que o GitHub cria sozinho
+
+      - name: Construir e publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.app }}
+          push: ${{ github.event_name != 'pull_request' }}
+          # 3 tags: a versão (0.4.0), o commit exato (sha-abc1234) e "latest"
+          tags: |
+            ghcr.io/${{ steps.versao.outputs.dono }}/cadastro-pets-${{ matrix.app }}:${{ steps.versao.outputs.versao }}
+            ghcr.io/${{ steps.versao.outputs.dono }}/cadastro-pets-${{ matrix.app }}:sha-${{ github.sha }}
+            ghcr.io/${{ steps.versao.outputs.dono }}/cadastro-pets-${{ matrix.app }}:latest
+          # Etiquetas que ligam a imagem ao repositório (aparece no GitHub)
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.versao.outputs.versao }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}

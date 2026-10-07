@@ -46,7 +46,7 @@ services:
   # ---------- API ----------
   api:
     build: ./api                                     # constrói a partir do api/Dockerfile...
-    image: cadastro-pets-api:${API_VERSION}          # ...e dá esta tag à imagem
+    image: ${REGISTRY:-ghcr.io/guuusta}/cadastro-pets-api:${API_VERSION}   # ...e dá esta tag (o mesmo nome publicado pelo CI)
     environment:
       # Cada dado numa variável separada: a API monta o endereço do banco
       # e trata caracteres especiais da senha (como @)
@@ -78,7 +78,7 @@ services:
   # ---------- Web ----------
   web:
     build: ./web
-    image: cadastro-pets-web:${WEB_VERSION}
+    image: ${REGISTRY:-ghcr.io/guuusta}/cadastro-pets-web:${WEB_VERSION}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 10s
