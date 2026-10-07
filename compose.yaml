@@ -6,6 +6,15 @@
 # ============================================================
 name: cadastro-pets
 
+# ---------- Configuração de logs, reaproveitada por todos os serviços ----------
+# "&logs" cria um "atalho" (âncora YAML); cada serviço usa com "logging: *logs".
+# Rotação: cada container guarda no máximo 3 arquivos de 10 MB (não enche o disco)
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ---------- Banco de dados ----------
@@ -29,6 +38,7 @@ services:
       timeout: 3s            # se não responder em 3s, conta como falha
       retries: 10            # 10 falhas seguidas = unhealthy
       start_period: 10s      # tempo de "aquecimento": falhas aqui não contam
+    logging: *logs
     restart: unless-stopped
     networks:
       - backend              # SÓ na rede interna: proxy e web nem enxergam o banco
@@ -59,6 +69,7 @@ services:
       timeout: 3s
       retries: 3
       start_period: 10s
+    logging: *logs
     restart: unless-stopped
     networks:
       - frontend             # recebe pedidos do proxy
@@ -73,6 +84,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    logging: *logs
     restart: unless-stopped
     networks:
       - frontend
@@ -94,6 +106,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    logging: *logs
     restart: unless-stopped
     networks:
       - frontend             # só a "recepção": não tem acesso ao banco
