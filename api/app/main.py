@@ -1,4 +1,6 @@
 """API de Cadastro de Pets: as rotas do CRUD."""
+import os
+
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,12 +8,15 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from .database import Base, engine, get_db
 
-VERSAO = "0.1.1"
+VERSAO = "0.2.0"
 
 # Cria a tabela "pets" se ela ainda não existir
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Cadastro de Pets - API", version=VERSAO)
+# ROOT_PATH: o "endereço base" quando a API está atrás de um proxy.
+# Atrás do Nginx ela mora em /api, então a página /docs precisa saber disso
+# para montar os links certos (/api/openapi.json). Sem proxy, fica vazio.
+app = FastAPI(title="Cadastro de Pets - API", version=VERSAO, root_path=os.getenv("ROOT_PATH", ""))
 
 
 def buscar_pet(pet_id: int, db: Session) -> models.Pet:
