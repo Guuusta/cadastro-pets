@@ -4,14 +4,16 @@ import time
 import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, engine, get_db
 from .logs import configurar_logs, request_id_atual
+from .metricas import DURACAO, OPERACOES_PETS, PEDIDOS
 
-VERSAO = "0.4.0"
+VERSAO = "0.5.0"
 
 log = configurar_logs()
 
@@ -36,14 +38,22 @@ async def registrar_pedido(request: Request, call_next):
     inicio = time.perf_counter()
     resposta = await call_next(request)
     resposta.headers["X-Request-ID"] = request_id      # devolve o número para quem chamou
+    duracao = time.perf_counter() - inicio
+
+    # Métricas: usamos o MOLDE da rota (/pets/{pet_id}) e não o caminho real (/pets/7),
+    # senão cada pet viraria uma linha nova no Prometheus
+    rota = getattr(request.scope.get("route"), "path", "desconhecida")
+    if rota not in ("/health", "/metrics"):
+        PEDIDOS.labels(request.method, rota, str(resposta.status_code)).inc()
+        DURACAO.labels(request.method, rota).observe(duracao)
 
     # O healthcheck chama /health a cada 10s: não vale a pena sujar o log com isso
-    if request.url.path != "/health":
+    if request.url.path not in ("/health", "/metrics"):
         log.info("pedido atendido", extra={"campos": {
             "metodo": request.method,
             "caminho": request.url.path,
             "status": resposta.status_code,
-            "duracao_ms": round((time.perf_counter() - inicio) * 1000, 1),
+            "duracao_ms": round(duracao * 1000, 1),
             "ip_cliente": request.headers.get("X-Real-IP", request.client.host if request.client else None),
         }})
     return resposta
@@ -72,6 +82,13 @@ def health(response: Response, db: Session = Depends(get_db)):
         return {"status": "erro", "versao": VERSAO, "banco": "indisponível"}
 
 
+# ---------- Métricas (lidas pelo Prometheus pela rede interna) ----------
+# O proxy BLOQUEIA /api/metrics: de fora ninguém vê; só o Prometheus, por dentro
+@app.get("/metrics", include_in_schema=False)
+def metricas():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 # ---------- C: criar ----------
 @app.post("/pets", response_model=schemas.PetOut, status_code=status.HTTP_201_CREATED, tags=["pets"])
 def criar_pet(dados: schemas.PetCreate, db: Session = Depends(get_db)):
@@ -79,6 +96,7 @@ def criar_pet(dados: schemas.PetCreate, db: Session = Depends(get_db)):
     db.add(pet)
     db.commit()
     db.refresh(pet)          # pega o id que o banco gerou
+    OPERACOES_PETS.labels("cadastro").inc()
     log.info("pet cadastrado", extra={"campos": {"pet_id": pet.id, "nome": pet.nome}})
     return pet
 
@@ -103,6 +121,7 @@ def atualizar_pet(pet_id: int, dados: schemas.PetCreate, db: Session = Depends(g
         setattr(pet, campo, valor)
     db.commit()
     db.refresh(pet)
+    OPERACOES_PETS.labels("atualizacao").inc()
     log.info("pet atualizado", extra={"campos": {"pet_id": pet.id, "nome": pet.nome}})
     return pet
 
@@ -113,5 +132,6 @@ def apagar_pet(pet_id: int, db: Session = Depends(get_db)):
     pet = buscar_pet(pet_id, db)
     db.delete(pet)
     db.commit()
+    OPERACOES_PETS.labels("exclusao").inc()
     log.info("pet excluído", extra={"campos": {"pet_id": pet_id, "nome": pet.nome}})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -79,3 +79,11 @@ def test_request_id_e_repassado():
     """O "número de protocolo" que chega do proxy volta na resposta (e vai para o log)."""
     r = cliente.get("/pets", headers={"X-Request-ID": "protocolo-123"})
     assert r.headers["X-Request-ID"] == "protocolo-123"
+
+
+def test_metricas_para_o_prometheus():
+    """O /metrics expõe os contadores no formato do Prometheus."""
+    cliente.post("/pets", json=REX)
+    texto = cliente.get("/metrics").text
+    assert "http_requests_total" in texto
+    assert 'pets_operacoes_total{operacao="cadastro"}' in texto
