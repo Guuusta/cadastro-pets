@@ -16,3 +16,6 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# Certificados HTTPS gerados localmente (cada máquina gera o seu)
+proxy/certs/
