@@ -1,0 +1,7 @@
+# Arquivos que NÃO entram na imagem (deixa a imagem menor e evita vazar coisas)
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+pets.db
+requirements-dev.txt
