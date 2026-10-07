@@ -73,3 +73,9 @@ def test_senha_vinda_de_arquivo(monkeypatch, tmp_path):
     arquivo.write_text("s3nh@do-arquivo\n")
     monkeypatch.setenv("DB_PASSWORD_FILE", str(arquivo))
     assert ler_senha() == "s3nh@do-arquivo"
+
+
+def test_request_id_e_repassado():
+    """O "número de protocolo" que chega do proxy volta na resposta (e vai para o log)."""
+    r = cliente.get("/pets", headers={"X-Request-ID": "protocolo-123"})
+    assert r.headers["X-Request-ID"] == "protocolo-123"
