@@ -2,13 +2,13 @@
 import os
 
 from fastapi import Depends, FastAPI, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, engine, get_db
 
-VERSAO = "0.2.0"
+VERSAO = "0.3.0"
 
 # Cria a tabela "pets" se ela ainda não existir
 Base.metadata.create_all(bind=engine)
@@ -28,9 +28,17 @@ def buscar_pet(pet_id: int, db: Session) -> models.Pet:
 
 
 # ---------- Saúde ----------
+# Não basta responder "estou vivo": a API só é útil se conseguir falar com o banco.
+# Por isso o /health faz um "SELECT 1". Banco fora do ar = 503 (serviço indisponível),
+# e o healthcheck do Docker marca a API como "unhealthy".
 @app.get("/health", tags=["saúde"])
-def health():
-    return {"status": "ok", "versao": VERSAO}
+def health(response: Response, db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "versao": VERSAO, "banco": "ok"}
+    except Exception:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "erro", "versao": VERSAO, "banco": "indisponível"}
 
 
 # ---------- C: criar ----------

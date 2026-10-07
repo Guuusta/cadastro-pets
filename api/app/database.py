@@ -1,7 +1,8 @@
 """Conexão com o banco de dados.
 
 Qual banco usar vem de variáveis de ambiente (configuração FORA do código):
-  - DB_HOST definido -> PostgreSQL, montado a partir de DB_HOST, DB_PORT, DB_NAME, DB_USER e DB_PASSWORD
+  - DB_HOST definido -> PostgreSQL, montado a partir de DB_HOST, DB_PORT, DB_NAME, DB_USER e
+                        DB_PASSWORD (ou DB_PASSWORD_FILE: caminho de um arquivo com a senha, o "secret")
   - DATABASE_URL     -> usa o endereço pronto (ex.: nos testes)
   - nenhum dos dois  -> SQLite (um arquivo local, bom para desenvolver)
 """
@@ -9,6 +10,19 @@ import os
 
 from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+
+def ler_senha() -> str:
+    """Lê a senha do banco.
+
+    Preferência: DB_PASSWORD_FILE (um arquivo montado como secret, ex.: /run/secrets/db_password).
+    Assim a senha não fica numa variável de ambiente, que aparece no "docker inspect".
+    """
+    arquivo = os.getenv("DB_PASSWORD_FILE")
+    if arquivo:
+        with open(arquivo, encoding="utf-8") as f:
+            return f.read().strip()
+    return os.environ["DB_PASSWORD"]
 
 
 def montar_url_do_banco() -> str | URL:
@@ -22,7 +36,7 @@ def montar_url_do_banco() -> str | URL:
         return URL.create(
             "postgresql+psycopg",
             username=os.environ["DB_USER"],
-            password=os.environ["DB_PASSWORD"],
+            password=ler_senha(),
             host=os.environ["DB_HOST"],
             port=int(os.getenv("DB_PORT", "5432")),
             database=os.environ["DB_NAME"],

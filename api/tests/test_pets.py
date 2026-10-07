@@ -20,6 +20,7 @@ def test_health():
     r = cliente.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+    assert r.json()["banco"] == "ok"
 
 
 def test_crud_completo():
@@ -62,3 +63,13 @@ def test_senha_com_caracteres_especiais(monkeypatch):
     url = montar_url_do_banco()
     assert url.host == "db"               # o host continua sendo só "db"
     assert url.password == "a@b:c/d#e"    # e a senha chega inteira
+
+
+def test_senha_vinda_de_arquivo(monkeypatch, tmp_path):
+    """A senha pode vir de um arquivo (secret), com quebra de linha no final."""
+    from app.database import ler_senha
+
+    arquivo = tmp_path / "db_password"
+    arquivo.write_text("s3nh@do-arquivo\n")
+    monkeypatch.setenv("DB_PASSWORD_FILE", str(arquivo))
+    assert ler_senha() == "s3nh@do-arquivo"
