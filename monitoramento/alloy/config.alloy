@@ -1,0 +1,52 @@
+// Alloy: o "carteiro" que recolhe os logs dos containers e entrega no Loki.
+
+// 1. Descobre os containers pelo Docker
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"              // procura containers novos a cada 5s (o padrão é 1 min)
+}
+
+// 2. Fica só com os containers DESTE projeto e cria etiquetas legíveis
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = sys.env("PROJETO")
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "servico"          // api, web, proxy, db...
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+// 3. Lê os logs (o mesmo que o "docker compose logs" mostra)
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.json.receiver]
+}
+
+// 4. Como nossos logs são JSON, extrai o "nivel" (INFO, ERROR) e vira etiqueta para filtrar
+loki.process "json" {
+  stage.json {
+    expressions = { nivel = "nivel" }
+  }
+  stage.labels {
+    values = { nivel = "" }
+  }
+  forward_to = [loki.write.loki.receiver]
+}
+
+// 5. Entrega no Loki
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

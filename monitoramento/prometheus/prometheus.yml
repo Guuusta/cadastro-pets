@@ -1,0 +1,15 @@
+# Prometheus: de quanto em quanto tempo e ONDE buscar as métricas
+global:
+  scrape_interval: 15s          # visita cada alvo a cada 15 segundos
+
+scrape_configs:
+  # A nossa API (pela rede interna "monitoramento", sem passar pelo proxy)
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  # O próprio Prometheus (útil para saber se ele está saudável)
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

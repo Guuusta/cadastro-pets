@@ -74,6 +74,7 @@ services:
     networks:
       - frontend             # recebe pedidos do proxy
       - backend              # e é a ÚNICA que fala com o banco
+      - monitoramento        # o Prometheus lê o /metrics por aqui
 
   # ---------- Web ----------
   web:
@@ -113,17 +114,115 @@ services:
     networks:
       - frontend             # só a "recepção": não tem acesso ao banco
 
+  # ============================================================
+  # MONITORAMENTO (opcional). Só sobe com:
+  #   docker compose --profile monitoramento up -d
+  # ============================================================
+
+  # ---------- Prometheus: coleta os NÚMEROS (métricas) ----------
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    profiles: [monitoramento]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d       # guarda 7 dias de métricas
+    volumes:
+      - ./monitoramento/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-dados:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *logs
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  # ---------- Loki: guarda os LOGS de todos os containers ----------
+  loki:
+    image: grafana/loki:3.7.8
+    profiles: [monitoramento]
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./monitoramento/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-dados:/loki
+    logging: *logs
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  # ---------- Alloy: o "carteiro" que leva os logs até o Loki ----------
+  alloy:
+    image: grafana/alloy:v1.20.1
+    profiles: [monitoramento]
+    command: run /etc/alloy/config.alloy --storage.path=/var/lib/alloy/data
+    environment:
+      PROJETO: ${COMPOSE_PROJECT_NAME}         # só recolhe logs DESTE projeto
+    volumes:
+      - ./monitoramento/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Acesso ao Docker para LER os logs. Atenção: o socket do Docker é poderoso
+      # (mesmo ":ro"), por isso o Alloy não tem porta aberta nem fica em rede pública
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    logging: *logs
+    restart: unless-stopped
+    networks:
+      - monitoramento
+
+  # ---------- Grafana: o PAINEL (em https://meuhost.local/grafana) ----------
+  grafana:
+    image: grafana/grafana:13.2.3
+    profiles: [monitoramento]
+    environment:
+      GF_SERVER_ROOT_URL: https://meuhost.local/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"    # mora em /grafana, atrás do proxy
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password   # senha via secret
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - ./monitoramento/grafana/provisioning:/etc/grafana/provisioning:ro   # fontes de dados e painéis
+      - ./monitoramento/grafana/dashboards:/var/lib/grafana/dashboards:ro   # o painel pronto
+      - grafana-dados:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging: *logs
+    restart: unless-stopped
+    networks:
+      - frontend             # o proxy chega no Grafana
+      - monitoramento        # o Grafana chega no Prometheus e no Loki
+
 # ---------- Secrets (senhas em arquivo, fora das variáveis de ambiente) ----------
 secrets:
   db_password:
     file: ./secrets/db_password.txt          # este arquivo NÃO vai para o Git (.gitignore)
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password.txt
 
 # ---------- Volumes ----------
 volumes:
   db-dados:              # volume nomeado, gerenciado pelo Docker
+  prometheus-dados:      # métricas
+  loki-dados:            # logs
+  grafana-dados:         # configurações do Grafana
 
 # ---------- Redes (segmentação: cada um só enxerga o que precisa) ----------
 networks:
   frontend:              # "recepção": proxy, web e api
   backend:               # "cofre": só api e banco
     internal: true       # sem saída para a internet
+  monitoramento:         # prometheus, loki, alloy, grafana (e a api, para ser medida)
+    internal: true

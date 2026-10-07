@@ -1,0 +1,38 @@
+# Loki: o "arquivo" central de logs, no modo mais simples (um processo só, disco local)
+auth_enabled: false             # sem login (só é acessível pela rede interna)
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  replication_factor: 1         # uma cópia só (laboratório, uma máquina)
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# Guarda os logs por 7 dias e apaga os mais antigos sozinho (não enche o disco)
+limits_config:
+  retention_period: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false      # não envia estatísticas de uso para a Grafana Labs

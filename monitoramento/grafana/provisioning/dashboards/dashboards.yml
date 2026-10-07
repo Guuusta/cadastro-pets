@@ -1,0 +1,8 @@
+# Carrega os painéis (dashboards) que estão na pasta /var/lib/grafana/dashboards
+apiVersion: 1
+providers:
+  - name: cadastro-pets
+    folder: Cadastro de Pets
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
