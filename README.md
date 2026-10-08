@@ -24,22 +24,29 @@ O foco não é a aplicação, e sim **como ela roda**: imagens versionadas, orqu
 
 ## Arquitetura
 
-```
-                          https://meuhost.local
-                                   │
-                          ┌────────▼────────┐
-                          │   proxy (Nginx) │  única porta exposta (80 → 443)
-                          └──┬──────┬─────┬─┘
-                    /web/    │      │     │   /grafana/ (opcional)
-              ┌──────────────▼┐  ┌──▼─────┴──────┐
-              │      web      │  │      api      │ /api/
-              │ (HTML + JS)   │  │   (FastAPI)   │
-              └───────────────┘  └───────┬───────┘
-     rede "frontend" ─────────────────────┼──────────────────────────────
-     rede "backend" (interna) ────────────┼──────────────────────────────
-                                  ┌───────▼───────┐
-                                  │   PostgreSQL  │──► volume db-dados
-                                  └───────────────┘
+```mermaid
+flowchart TB
+    usuario(["👤 Navegador<br/>https://meuhost.local"])
+
+    subgraph frontend ["rede frontend"]
+        proxy["<b>proxy</b> · Nginx<br/>HTTPS · portas 80 e 443"]
+        web["<b>web</b><br/>HTML + JS"]
+        api["<b>api</b><br/>FastAPI"]
+        grafana["<b>grafana</b><br/>(opcional)"]
+    end
+
+    subgraph backend ["rede backend · interna, sem internet"]
+        db[("<b>db</b><br/>PostgreSQL")]
+    end
+
+    volume[("💾 volume<br/>db-dados")]
+
+    usuario -->|"única entrada"| proxy
+    proxy -->|"/web/"| web
+    proxy -->|"/api/"| api
+    proxy -.->|"/grafana/"| grafana
+    api -->|"SQL"| db
+    db --- volume
 ```
 
 | Serviço | Função | Exposto para fora? |
@@ -217,13 +224,29 @@ A rotação é feita pelo Docker: no máximo **3 arquivos de 10 MB** por contain
 
 O workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) roda a cada push e pull request:
 
-```
-testes da API (pytest) ──┐
-                          ├──► publicar imagem (api)  ──► ghcr.io/guuusta/cadastro-pets-api
-valida o compose.yaml ────┘    publicar imagem (web)  ──► ghcr.io/guuusta/cadastro-pets-web
+```mermaid
+flowchart LR
+    push(["git push / pull request"])
+
+    subgraph ci ["CI · inspeção"]
+        testes["Testes da API<br/>(pytest)"]
+        compose["Validar o<br/>compose.yaml"]
+    end
+
+    subgraph cd ["CD · Continuous Delivery"]
+        pubapi["Construir imagem<br/>da API"]
+        pubweb["Construir imagem<br/>da Web"]
+    end
+
+    registry[("📦 ghcr.io")]
+
+    push --> ci
+    ci ==>|"tudo passou ✅"| cd
+    cd -->|"publica só em<br/>push na main"| registry
 ```
 
-- A publicação **só acontece se os testes passarem**, e só em push na `main` (em pull request, as imagens são apenas construídas).
+- A publicação **só acontece se os testes passarem**, e só em push na `main` (em pull request, as imagens são apenas construídas, para provar que o build funciona).
+- É **Continuous Delivery**: o pipeline entrega a imagem pronta no registry. A implantação (`docker compose pull` + `up`) é feita por uma pessoa; automatizar esse passo seria **Continuous Deployment**.
 - Cada imagem recebe 3 tags: a **versão** (ex.: `0.5.0`), o **commit** (`sha-<hash>`) e `latest`.
 - **Versionamento semântico, por aplicação:** a versão oficial de cada imagem fica no `.env.example` (`API_VERSION`, `WEB_VERSION`). Conserto sobe o PATCH (`0.1.0 → 0.1.1`), funcionalidade nova sobe o MINOR (`0.1.1 → 0.2.0`).
 - Commits seguem o padrão [Conventional Commits](https://www.conventionalcommits.org/pt-br/) (`feat:`, `fix:`, `ci:`, `chore:`...).
